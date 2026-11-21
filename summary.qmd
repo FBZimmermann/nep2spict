@@ -123,7 +123,7 @@ acc_wide |>
   left_join(acc_n |> transmute(FU, `Passed (of 7)` = passed,
                                 Accepted = ifelse(accepted, "yes", "no")), by = "FU") |>
   left_join(cfg_tab |> transmute(FU, Configuration = cfg_label(stock)), by = "FU") |>
-  relocate(Configuration, .after = FU) |>
+  relocate(Accepted, Configuration, .after = FU) |>
   arrange(FU) |>
   kbl(caption = "Acceptance checklist by stock (✓ pass, ✗ fail, – not evaluated). Hindcast MASE is supplementary.") |>
   kable_styling(bootstrap_options = c("striped", "condensed"), font_size = 11)
