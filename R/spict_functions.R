@@ -6,12 +6,15 @@
 
 # Default priors for a stock: FU32 template values for species-level parameters, generic
 # weakly-informative values for stock-history parameters, overridable in data/config/stocks.csv.
-default_priors <- function(input, s = settings) {
+# overrides = FALSE gives the generic configuration, ignoring stocks.csv (used to report whether a
+# stock with tuned priors is assessable without them).
+default_priors <- function(input, s = settings, overrides = TRUE) {
   cfg <- input$cfg
+  use <- function(x) overrides && !is.null(x) && !is.na(x)
   list(
     r_median      = s$r_median, r_sd = s$r_sd,
-    bkfrac_median = if (!is.na(cfg$bkfrac_median)) cfg$bkfrac_median else s$bkfrac_median,
-    bkfrac_sd     = if (!is.na(cfg$bkfrac_sd))     cfg$bkfrac_sd     else s$bkfrac_sd,
+    bkfrac_median = if (use(cfg$bkfrac_median)) cfg$bkfrac_median else s$bkfrac_median,
+    bkfrac_sd     = if (use(cfg$bkfrac_sd))     cfg$bkfrac_sd     else s$bkfrac_sd,
     sdb_median    = s$sdb_median, sdb_sd = s$sdb_sd,
     sdc_median    = s$sdc_median, sdc_sd = s$sdc_sd,
     sdi_median    = input$meta$mean_index_cv, sdi_sd = s$sdi_sd,
@@ -405,10 +408,32 @@ run_sensitivity <- function(input, base_priors = default_priors(input)) {
   }))
 }
 
+# Fit the generic configuration (no stocks.csv prior overrides) for a stock whose base run uses
+# tuned priors, so the report can state whether the stock is assessable without the tuning.
+generic_check <- function(input, generic_priors = default_priors(input, overrides = FALSE)) {
+  f <- fit_spict_safe(make_spict_inp(input, generic_priors), residuals = "osa")
+  conv <- if (inherits(f, "spict_error")) NA_integer_ else as.integer(f$opt$convergence)
+  msg  <- if (inherits(f, "spict_error")) f$error else f$opt$message
+  sens_row(f, "Generic configuration", "generic") |>
+    mutate(convergence_code = conv, message = msg,
+           bkfrac_median = generic_priors$bkfrac_median, bkfrac_sd = generic_priors$bkfrac_sd)
+}
+
+# Configuration flag stored in every summary object (also for failed stocks).
+#   tuned: text from stocks.csv `tuned` (NA = generic configuration)
+#   generic: generic_check() row when tuned, else NULL
+config_status <- function(input, fit_ok, generic = NULL) {
+  tuned <- input$cfg$tuned
+  tuned <- if (is.null(tuned) || is.na(tuned) || tuned == "") NA_character_ else tuned
+  list(tuned = tuned, is_tuned = !is.na(tuned), base_converged = fit_ok,
+       generic_converged = if (is.na(tuned)) fit_ok else isTRUE(generic$converged),
+       generic = generic)
+}
+
 # ---- Summary object ----------------------------------------------------------------------------
 
 make_stock_summary <- function(input, fit, man, mantab, checks, sens = NULL, retro_fit = NULL,
-                               advice = NULL, advice_prev = NULL) {
+                               advice = NULL, advice_prev = NULL, generic = NULL) {
   ts <- spict_timeseries(fit) |>
     left_join(input$data |> select(year, landings, discards_used, catch, catch_total, index,
                                    index_lo, index_hi, hr, B_Btrigger_ices, HR_FMSY_ices),
@@ -450,6 +475,7 @@ make_stock_summary <- function(input, fit, man, mantab, checks, sens = NULL, ret
       spict_comparable = spict_comparable,
       ratio_spict_ices = spict_comparable / ia$value),
     sensitivity = sens,
+    config      = config_status(input, fit_ok = TRUE, generic = generic),
     settings    = settings,
     spict_version = as.character(packageVersion("spict")),
     created     = Sys.time()

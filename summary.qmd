@@ -32,8 +32,25 @@ failed <- names(S)[vapply(S, function(x) isTRUE(x$failed), logical(1))]
 ok     <- setdiff(names(S), failed)
 missing_stocks <- stocks$stock[!avail]
 
-lab <- function(stock) paste0("FU ", stocks$fu[match(stock, stocks$stock)])
+# Configuration flags: stocks with priors tuned for convergence, and whether the generic
+# configuration converges for them (reported in addition to the tuned run)
+cfg_tab <- bind_rows(lapply(names(S), function(s) {
+  cf <- S[[s]]$config
+  tibble(stock = s,
+         tuned = isTRUE(cf$is_tuned), tuned_note = if (is.null(cf$tuned)) NA_character_ else cf$tuned,
+         generic_converged = if (is.null(cf$generic_converged)) !s %in% failed else cf$generic_converged,
+         generic_B = if (is.null(cf$generic$BBmsy)) NA_real_ else cf$generic$BBmsy)
+}))
+tuned_stocks   <- cfg_tab$stock[cfg_tab$tuned]
+generic_failed <- cfg_tab$stock[!cfg_tab$generic_converged]
+cfg_label <- function(stock) ifelse(stock %in% tuned_stocks, "TUNED B0/K", "generic")
+tuned_bk  <- stocks |> filter(stock %in% tuned_stocks) |> distinct(bkfrac_median, bkfrac_sd)
+
+# FU labels; "†" marks stocks with a configuration tuned for convergence in every table and figure
+lab <- function(stock) paste0("FU ", stocks$fu[match(stock, stocks$stock)],
+                              ifelse(stock %in% tuned_stocks, " †", ""))
 fu_levels <- lab(stocks$stock)
+cfg_tab <- cfg_tab |> mutate(FU = factor(lab(stock), fu_levels))
 ```
 
 ::: {.callout-important}
@@ -50,11 +67,22 @@ UWTV-based assessment, as listed in WGNEPH 2025 [@ices2026wgneph]. Inputs are th
 `r settings$sag_year` SAG records, so the last data point is the `r settings$sag_year` UWTV
 survey. The model configuration follows the accepted FU32 SPiCT assessment
 (`knowledge/spict_conventions.md`). Summaries are available for `r length(S)` stocks.
-`r if (length(failed)) paste0("The base model failed for: ", paste(failed, collapse = ", "), ". ") else ""``r if (length(missing_stocks)) paste0("Not yet run: ", paste(missing_stocks, collapse = ", "), ".") else ""`
+`r if (length(failed)) paste0("The base model failed for: ", paste(lab(failed), collapse = ", "), ". ") else ""``r if (length(missing_stocks)) paste0("Not yet run: ", paste(missing_stocks, collapse = ", "), ".") else ""`
+
+::: {.callout-warning}
+## Stocks with tuned configuration
+
+With the generic configuration, SPiCT does not converge for
+`r length(generic_failed)` of `r length(S)` stocks
+(`r if (length(generic_failed)) paste(lab(generic_failed), collapse = ", ") else "none"`).
+`r if (length(tuned_stocks)) paste0("For ", paste(lab(tuned_stocks), collapse = " and "), ", the B0/K prior was set to ", paste(tuned_bk$bkfrac_median, collapse = "/"), " (SD ", paste(tuned_bk$bkfrac_sd, collapse = "/"), ") so that the model converges (project lead's decision, see knowledge/decisions.md). Their results are reported and marked † and \"TUNED B0/K\" throughout. A prior chosen for convergence is tuning, not external information: these stocks are **not assessable with the generic configuration**, and their results carry less weight than those of the other stocks.") else "No stock has a tuned configuration."`
+:::
 
 ```{r tab-scope}
 bind_rows(lapply(S, \(x) x$meta)) |>
-  transmute(FU = fu, Area = area, Ecoregion = ecoregion,
+  transmute(FU = sub("^FU ", "", lab(stock)), Area = area, Ecoregion = ecoregion,
+            Configuration = cfg_label(stock),
+            `Generic config. converges` = ifelse(cfg_tab$generic_converged[match(stock, cfg_tab$stock)], "yes", "NO"),
             Catch = paste0(catch_start, "–", catch_end),
             UWTV = paste0(index_start, "–", index_end), `N surveys` = n_index,
             `Mean CV (%)` = round(100 * mean_index_cv, 1),
@@ -87,12 +115,15 @@ acc_n <- acc |> filter(id <= 7) |> group_by(FU) |>
 n_acc <- sum(acc_n$accepted)
 ```
 
-`r n_acc` of `r length(ok)` stocks pass all seven acceptance criteria.
+`r n_acc` of `r length(ok)` stocks pass all seven acceptance criteria
+`r n_acc_tuned <- sum(acc_n$accepted & acc_n$FU %in% lab(tuned_stocks)); if (length(tuned_stocks)) paste0("(", n_acc_tuned, " of them with a tuned B0/K prior; ", n_acc - n_acc_tuned, " with the generic configuration)") else ""`.
 
 ```{r tab-acc}
 acc_wide |>
   left_join(acc_n |> transmute(FU, `Passed (of 7)` = passed,
                                 Accepted = ifelse(accepted, "yes", "no")), by = "FU") |>
+  left_join(cfg_tab |> transmute(FU, Configuration = cfg_label(stock)), by = "FU") |>
+  relocate(Configuration, .after = FU) |>
   arrange(FU) |>
   kbl(caption = "Acceptance checklist by stock (✓ pass, ✗ fail, – not evaluated). Hindcast MASE is supplementary.") |>
   kable_styling(bootstrap_options = c("striped", "condensed"), font_size = 11)
@@ -316,11 +347,15 @@ adv |> left_join(acc_n |> select(FU, accepted), by = "FU") |>
 sens <- bind_rows(lapply(ok, function(s) if (!is.null(S[[s]]$sensitivity)) S[[s]]$sensitivity |> mutate(stock = s))) |>
   mutate(FU = factor(lab(stock), fu_levels))
 sens_sum <- sens |> group_by(FU) |>
-  summarise(runs = n(), converged = sum(converged),
+  # flips first: `converged` is still the logical run flag here (it is overwritten by its count below)
+  summarise(B_status_flips = n_distinct(BBmsy[converged] >= settings$btrigger_bmsy) > 1,
+            F_status_flips = n_distinct(FFmsy[converged] <= 1) > 1,
+            B_flip_runs = paste(label[converged & (BBmsy >= settings$btrigger_bmsy) != (BBmsy[label == "Base"][1] >= settings$btrigger_bmsy)], collapse = "; "),
+            F_flip_runs = paste(label[converged & (FFmsy <= 1) != (FFmsy[label == "Base"][1] <= 1)], collapse = "; "),
+            runs = n(), converged = sum(converged),
             B_min = min(BBmsy, na.rm = TRUE), B_max = max(BBmsy, na.rm = TRUE),
-            F_min = min(FFmsy, na.rm = TRUE), F_max = max(FFmsy, na.rm = TRUE),
-            B_status_flips = n_distinct(BBmsy[converged] >= settings$btrigger_bmsy) > 1,
-            F_status_flips = n_distinct(FFmsy[converged] <= 1) > 1, .groups = "drop")
+            F_min = min(FFmsy, na.rm = TRUE), F_max = max(FFmsy, na.rm = TRUE), .groups = "drop") |>
+  relocate(B_status_flips, F_status_flips, B_flip_runs, F_flip_runs, .after = last_col())
 ```
 
 Across the sensitivity runs, the stock-size classification (relative to 0.5 BMSY) changes in
@@ -406,6 +441,9 @@ sens_sum |> arrange(FU) |>
 
 # Caveats
 
+- † Stocks with a B0/K prior tuned for convergence: their sensitivity runs vary around the tuned
+  base, so the "B0/K 0.75" run repeats the base run. The generic configuration (B0/K 0.5) is
+  reported in the stock documents and in the scope table, not as a sensitivity run.
 - The UWTV index counts animals, while SPiCT models biomass. The "Biomass index" sensitivity run
   tests the effect of mean-weight changes, using the mean weight of the removals.
 - Priors are generic: r is a *Nephrops* meta-analysis value from the FU32 template, and B0/K is

@@ -18,6 +18,19 @@ advice_prev <- get_asd_advice(stock, settings$sag_year - 1)
 priors <- default_priors(input)
 inp    <- make_spict_inp(input, priors)
 key    <- inp_key(inp)
+generic_priors <- default_priors(input, overrides = FALSE)
+has_override   <- !identical(priors, generic_priors)       # stocks.csv prior overrides in use
+tuned_note     <- config_status(input, fit_ok = NA)$tuned   # NA unless flagged in stocks.csv
+```
+
+```{r tuned-callout, eval=!is.na(tuned_note)}
+#| results: asis
+#| echo: false
+cat("::: {.callout-warning}\n## Configuration tuned for this stock\n\n",
+    "The B0/K prior is ", priors$bkfrac_median, " (SD ", priors$bkfrac_sd, ") instead of the ",
+    "generic ", generic_priors$bkfrac_median, " (SD ", generic_priors$bkfrac_sd, "). Reason: ",
+    tuned_note, ". A prior chosen because the model then converges is tuning, not external ",
+    "information. Section *Generic configuration* reports the fit without it.\n:::\n", sep = "")
 ```
 
 # Introduction
@@ -117,7 +130,9 @@ tibble(
                      priors$sdc_median, if (priors$use_sdi_prior) priors$sdi_median else NA, 2),
   `SD (log)` = c(priors$r_sd, priors$bkfrac_sd, priors$sdb_sd, priors$sdc_sd,
                  if (priors$use_sdi_prior) priors$sdi_sd else NA, NA),
-  Source = c("Nephrops meta-analysis (FU32 template)", "generic, weakly informative",
+  Source = c("Nephrops meta-analysis (FU32 template)",
+             if (!is.na(tuned_note)) "stock-specific, TUNED for convergence (see warning above)"
+             else if (has_override) "stock-specific (data/config/stocks.csv)" else "generic, weakly informative",
              "FU32 template", "FU32 template", "mean UWTV CV of this stock", "fixed (Schaefer)")
 ) |> kbl(digits = 3, caption = "Priors (lognormal).") |>
   kable_styling(bootstrap_options = c("striped", "condensed"), full_width = FALSE)
@@ -136,6 +151,27 @@ safe_plot(function() plotspict.data(inp))
 fit <- cached(file.path(out_dir, "fit.rds"), key, params$refit, fit_spict_safe(inp))
 fit_ok <- is_ok_fit(fit)
 if (!fit_ok) message("Base fit failed or did not converge.")
+```
+
+```{r generic, eval=has_override}
+#| results: hide
+generic <- cached(file.path(out_dir, "fit_generic.rds"),
+                  rlang::hash(list(inp_key(make_spict_inp(input, generic_priors)),
+                                   deparse(generic_check), deparse(sens_row))),
+                  params$refit, generic_check(input, generic_priors))
+```
+
+```{r generic-text, eval=has_override}
+#| results: asis
+#| echo: false
+cat("## Generic configuration\n\n",
+    "The base run uses stock-specific priors. With the generic configuration (B0/K prior ",
+    generic_priors$bkfrac_median, ", SD ", generic_priors$bkfrac_sd, ") the model ",
+    if (isTRUE(generic$converged))
+      paste0("converges, with terminal B/BMSY ", fmt(generic$BBmsy), " and F/FMSY ", fmt(generic$FFmsy), ".")
+    else paste0("**does not converge** (", generic$message, "). Under the generic ",
+                "configuration this stock is not assessable with SPiCT."),
+    "\n\n", sep = "")
 ```
 
 ```{r nonconv-callout}
@@ -369,7 +405,8 @@ mantab |>
 
 ```{r advice-compare, eval=fit_ok}
 summ <- make_stock_summary(input, fit, man, mantab, checks, sens = sens, retro_fit = retro_fit,
-                           advice = advice, advice_prev = advice_prev)
+                           advice = advice, advice_prev = advice_prev,
+                           generic = if (has_override) generic else NULL)
 adv <- summ$advice
 ```
 
@@ -384,6 +421,7 @@ saveRDS(summ, path_data("summary", paste0(stock, "_summary.rds")))
 dir.create(path_data("summary"), showWarnings = FALSE)
 saveRDS(list(stock = stock, meta = meta, failed = TRUE,
              error = if (inherits(fit, "spict_error")) fit$error else paste("convergence", fit$opt$convergence),
+             config = config_status(input, fit_ok = FALSE, generic = if (has_override) generic else NULL),
              created = Sys.time()),
         path_data("summary", paste0(stock, "_summary.rds")))
 ```
