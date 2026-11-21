@@ -16,7 +16,11 @@ export PATH="/c/Program Files/R/R-4.5.3/bin/x64:/c/Program Files/Quarto/bin:$PAT
 Rscript R/get_data.R          # download/cache SAG + ASD, build SPiCT inputs
 Rscript R/create_stock_docs.R # create missing stock/<stock>/<stock>_spict.qmd
 Rscript R/render_all.R        # render all stocks (parallel), then summary.qmd
+bash R/publish_pages.sh       # publish summary.html to GitHub Pages (gh-pages branch)
 ```
+
+The rendered summary is at <https://fbzimmermann.github.io/nep2spict/>. HTML output is not
+tracked on `main`; the `gh-pages` branch holds only the published page.
 
 R packages: spict (GitHub DTUAqua/spict), icesSAG, icesAdvice, tidyverse, patchwork, kableExtra,
 here, jsonlite, rlang.
