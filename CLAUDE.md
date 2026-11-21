@@ -21,7 +21,7 @@ Zimmermann (IMR).
 | Folder | Contents |
 |---|---|
 | `data/` | `config/stocks.csv` (per-stock settings), `sag/` and `asd/` (cached ICES downloads), `input/` (SPiCT inputs), `spict/<stock>/` (cached fits and diagnostics, render logs), `summary/` (per-stock summary objects) |
-| `R/` | `setup.R` (settings, priors), `sag_data.R`, `prepare_inputs.R`, `spict_functions.R`, scripts `get_data.R`, `create_stock_docs.R`, `render_all.R` |
+| `R/` | `setup.R` (settings, priors), `sag_data.R`, `prepare_inputs.R`, `spict_functions.R`, scripts `get_data.R`, `create_stock_docs.R`, `render_all.R`, `publish_pages.sh` |
 | `knowledge/` | Background, conventions, acceptance criteria, data quirks, decision log, bibliography |
 | `skills/` | Agent skills for this project |
 | `stock/` | `_template/_spict_body.qmd` (shared body) and one folder per FU with its `<stock>_spict.qmd` |
@@ -39,4 +39,15 @@ Zimmermann (IMR).
 - Never type result numbers into prose. Use inline R from the summary objects.
 - Cached fits are keyed on their input (`inp_key()`). Do not bypass the key check.
 - SAG/ASD data are public ICES data. The project contains no confidential IMR data; keep it that
-  way (do not copy FU32 survey or logbook data in).
+  way (do not copy FU32 survey or logbook data in). The repository is public.
+- Priors set only to obtain convergence are tuning: fill the `tuned` column in `stocks.csv`
+  (see `knowledge/spict_conventions.md`).
+
+## Repository
+
+- GitHub: <https://github.com/FBZimmermann/nep2spict> (public), branch `main`. Commit author for
+  this repo: `FBZimmermann <FBZimmermann@users.noreply.github.com>` (local git config).
+- Fits, inputs, summary objects, HTML and logs are not tracked (`.gitignore`). They are
+  regenerated with `Rscript R/render_all.R`.
+- Rendered summary: `gh-pages` branch, published with `bash R/publish_pages.sh`, served at
+  <https://fbzimmermann.github.io/nep2spict/>.

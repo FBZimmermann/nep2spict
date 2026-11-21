@@ -32,6 +32,20 @@ documents. Do not load fits in the summary.
 - Selection: the 16 stocks are not a random sample of Nephrops stocks. Do not generalise beyond
   "Category 1 UWTV stocks, generic configuration".
 
+- **Tuned stocks** (`config$is_tuned`, "†"): report them, but keep them apart from stocks run with
+  the generic configuration, and state that they are not assessable without the tuning.
+- **Check derived counts independently.** A `summarise()` that overwrites a column (e.g.
+  `converged = sum(converged)`) changes it for every later expression in the same call. This hid
+  all sensitivity status flips once (fixed 2026-11-21). Recount key numbers (flips, accepted
+  stocks) from the summary objects in a separate R session before reporting them.
+
+## Publishing
+
+`summary.html` is not tracked on `main`. After a render, `bash R/publish_pages.sh` publishes it
+to the `gh-pages` branch, served at <https://fbzimmermann.github.io/nep2spict/>. The script
+refuses pages that contain local paths. Commit and push `main` first, so that the publish
+commit records a pushed `main` commit.
+
 ## Writing conclusions
 
 Derive counts and medians in code (inline R), never type them. Each conclusion sentence in the

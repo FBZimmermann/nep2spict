@@ -17,7 +17,7 @@ Read first: `knowledge/spict_conventions.md` (configuration and why) and
 - `stock/_template/_spict_body.qmd`: the shared document body. `stock/<stock>/<stock>_spict.qmd`:
   params and stock notes, which include the body. Generate missing stock documents with
   `Rscript R/create_stock_docs.R` (it never overwrites).
-- Caches: `data/spict/<stock>/{fit,retro,hindcast,checkini,sensitivity,management}.rds`, each stored
+- Caches: `data/spict/<stock>/{fit,retro,hindcast,checkini,sensitivity,management,fit_generic}.rds`, each stored
   with the `inp_key()` hash of its input. A stale cache is recomputed automatically.
 - Output for the summary: `data/summary/<stock>_summary.rds`.
 - **The cache key covers the inputs (data, priors, settings, spict version), not the code** (except `sensitivity.rds`, whose key also hashes `run_sensitivity()` and `sens_row()`).

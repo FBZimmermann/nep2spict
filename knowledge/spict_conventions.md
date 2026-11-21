@@ -34,6 +34,18 @@ two differ, the choice made here is stated. Implemented in `make_spict_inp()` in
 species-level and applies to all FUs. The B0/K prior is the one most likely to need a
 stock-specific value, from the history of each fishery before the start of the catch series.
 
+**Tuned stocks.** FU 12 and FU 3-4 use B0/K 0.75 (SD 0.25), because the generic prior does not
+converge (`decisions.md`, 2026-11-21). This is tuning, flagged in `stocks.csv` column `tuned`.
+Every prior override in `stocks.csv` triggers a refit with the generic configuration
+(`generic_check()`, cache `fit_generic.rds`), stored in the summary object as `config`. A new
+override set only to get convergence must also fill `tuned`, so the stock documents and the
+summary flag it (callout, "†" in FU labels, "TUNED B0/K").
+
+**Sensitivity runs** (`run_sensitivity()`): r prior ×0.5, ×1.5, SD ×2; B0/K 0.25 and 0.75; sdi
+prior off, ×2 and ×3 the CV (×3 added at the project lead's request because UWTV CIs are too
+narrow); n estimated; Fox shape; biomass index; catch including all discards; catch from the
+first index year.
+
 ## Management (forecast)
 
 - Intermediate year (assessment year): catch = last observed catch (status quo).

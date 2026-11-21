@@ -7,6 +7,11 @@
 - [Decisions](decisions.md): dated log of configuration decisions and open questions
 - [References](references.bib): bibliography for the Quarto documents
 
+State (2026-11-21): all 16 stocks render; FU 12 and FU 3-4 run with a B0/K prior tuned for
+convergence (flagged, `decisions.md`). Code on GitHub <https://github.com/FBZimmermann/nep2spict>,
+rendered summary at <https://fbzimmermann.github.io/nep2spict/> (see `CLAUDE.md`, "Repository").
+Results live in `summary.qmd`, not here.
+
 External sources used to build the project (2026-11-21):
 
 - ICES (2026) WGNEPH 2025 report, <https://doi.org/10.17895/ices.pub.30477911>
