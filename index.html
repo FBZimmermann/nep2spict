@@ -3723,7 +3723,7 @@ Stocks with tuned configuration
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">left_join</span>(acc_n <span class="sc">|&gt;</span> <span class="fu">transmute</span>(FU, <span class="st">`</span><span class="at">Passed (of 7)</span><span class="st">`</span> <span class="ot">=</span> passed,</span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>                                <span class="at">Accepted =</span> <span class="fu">ifelse</span>(accepted, <span class="st">&quot;yes&quot;</span>, <span class="st">&quot;no&quot;</span>)), <span class="at">by =</span> <span class="st">&quot;FU&quot;</span>) <span class="sc">|&gt;</span></span>
 <span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">left_join</span>(cfg_tab <span class="sc">|&gt;</span> <span class="fu">transmute</span>(FU, <span class="at">Configuration =</span> <span class="fu">cfg_label</span>(stock)), <span class="at">by =</span> <span class="st">&quot;FU&quot;</span>) <span class="sc">|&gt;</span></span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">relocate</span>(Configuration, <span class="at">.after =</span> FU) <span class="sc">|&gt;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">relocate</span>(Accepted, Configuration, <span class="at">.after =</span> FU) <span class="sc">|&gt;</span></span>
 <span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">arrange</span>(FU) <span class="sc">|&gt;</span></span>
 <span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">kbl</span>(<span class="at">caption =</span> <span class="st">&quot;Acceptance checklist by stock (✓ pass, ✗ fail, – not evaluated). Hindcast MASE is supplementary.&quot;</span>) <span class="sc">|&gt;</span></span>
 <span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">kable_styling</span>(<span class="at">bootstrap_options =</span> <span class="fu">c</span>(<span class="st">&quot;striped&quot;</span>, <span class="st">&quot;condensed&quot;</span>), <span class="at">font_size =</span> <span class="dv">11</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
@@ -3734,6 +3734,7 @@ Stocks with tuned configuration
 <thead>
 <tr class="header">
 <th style="text-align: left;" data-quarto-table-cell-role="th">FU</th>
+<th style="text-align: left;" data-quarto-table-cell-role="th">Accepted</th>
 <th style="text-align: left;" data-quarto-table-cell-role="th">Configuration</th>
 <th style="text-align: left;" data-quarto-table-cell-role="th">Convergence</th>
 <th style="text-align: left;" data-quarto-table-cell-role="th">Finite variances</th>
@@ -3744,12 +3745,12 @@ Stocks with tuned configuration
 <th style="text-align: left;" data-quarto-table-cell-role="th">Initial values</th>
 <th style="text-align: left;" data-quarto-table-cell-role="th">Hindcast (supplementary)</th>
 <th style="text-align: right;" data-quarto-table-cell-role="th">Passed (of 7)</th>
-<th style="text-align: left;" data-quarto-table-cell-role="th">Accepted</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
 <td style="text-align: left;">FU 3-4 †</td>
+<td style="text-align: left;">no</td>
 <td style="text-align: left;">TUNED B0/K</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
@@ -3760,10 +3761,10 @@ Stocks with tuned configuration
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✗</td>
 <td style="text-align: right;">5</td>
-<td style="text-align: left;">no</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">FU 6</td>
+<td style="text-align: left;">yes</td>
 <td style="text-align: left;">generic</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
@@ -3774,10 +3775,10 @@ Stocks with tuned configuration
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✗</td>
 <td style="text-align: right;">7</td>
-<td style="text-align: left;">yes</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">FU 7</td>
+<td style="text-align: left;">yes</td>
 <td style="text-align: left;">generic</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
@@ -3788,10 +3789,10 @@ Stocks with tuned configuration
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: right;">7</td>
-<td style="text-align: left;">yes</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">FU 8</td>
+<td style="text-align: left;">yes</td>
 <td style="text-align: left;">generic</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
@@ -3802,10 +3803,10 @@ Stocks with tuned configuration
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: right;">7</td>
-<td style="text-align: left;">yes</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">FU 9</td>
+<td style="text-align: left;">yes</td>
 <td style="text-align: left;">generic</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
@@ -3816,10 +3817,10 @@ Stocks with tuned configuration
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: right;">7</td>
-<td style="text-align: left;">yes</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">FU 11</td>
+<td style="text-align: left;">yes</td>
 <td style="text-align: left;">generic</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
@@ -3830,10 +3831,10 @@ Stocks with tuned configuration
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✗</td>
 <td style="text-align: right;">7</td>
-<td style="text-align: left;">yes</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">FU 12 †</td>
+<td style="text-align: left;">yes</td>
 <td style="text-align: left;">TUNED B0/K</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
@@ -3844,10 +3845,10 @@ Stocks with tuned configuration
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✗</td>
 <td style="text-align: right;">7</td>
-<td style="text-align: left;">yes</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">FU 13</td>
+<td style="text-align: left;">no</td>
 <td style="text-align: left;">generic</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
@@ -3858,10 +3859,10 @@ Stocks with tuned configuration
 <td style="text-align: left;">✗</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: right;">6</td>
-<td style="text-align: left;">no</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">FU 14</td>
+<td style="text-align: left;">no</td>
 <td style="text-align: left;">generic</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
@@ -3872,10 +3873,10 @@ Stocks with tuned configuration
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✗</td>
 <td style="text-align: right;">5</td>
-<td style="text-align: left;">no</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">FU 15</td>
+<td style="text-align: left;">no</td>
 <td style="text-align: left;">generic</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
@@ -3886,10 +3887,10 @@ Stocks with tuned configuration
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: right;">5</td>
-<td style="text-align: left;">no</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">FU 16</td>
+<td style="text-align: left;">no</td>
 <td style="text-align: left;">generic</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
@@ -3900,10 +3901,10 @@ Stocks with tuned configuration
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: right;">6</td>
-<td style="text-align: left;">no</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">FU 17</td>
+<td style="text-align: left;">no</td>
 <td style="text-align: left;">generic</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
@@ -3914,10 +3915,10 @@ Stocks with tuned configuration
 <td style="text-align: left;">✗</td>
 <td style="text-align: left;">✗</td>
 <td style="text-align: right;">5</td>
-<td style="text-align: left;">no</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">FU 19</td>
+<td style="text-align: left;">no</td>
 <td style="text-align: left;">generic</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
@@ -3928,10 +3929,10 @@ Stocks with tuned configuration
 <td style="text-align: left;">✗</td>
 <td style="text-align: left;">✗</td>
 <td style="text-align: right;">6</td>
-<td style="text-align: left;">no</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">FU 20-21</td>
+<td style="text-align: left;">no</td>
 <td style="text-align: left;">generic</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
@@ -3942,10 +3943,10 @@ Stocks with tuned configuration
 <td style="text-align: left;">✗</td>
 <td style="text-align: left;">✗</td>
 <td style="text-align: right;">3</td>
-<td style="text-align: left;">no</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">FU 22</td>
+<td style="text-align: left;">yes</td>
 <td style="text-align: left;">generic</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
@@ -3956,10 +3957,10 @@ Stocks with tuned configuration
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✗</td>
 <td style="text-align: right;">7</td>
-<td style="text-align: left;">yes</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">FU 23-24</td>
+<td style="text-align: left;">no</td>
 <td style="text-align: left;">generic</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: left;">✓</td>
@@ -3970,7 +3971,6 @@ Stocks with tuned configuration
 <td style="text-align: left;">✗</td>
 <td style="text-align: left;">✓</td>
 <td style="text-align: right;">5</td>
-<td style="text-align: left;">no</td>
 </tr>
 </tbody>
 </table>
@@ -7141,7 +7141,7 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 <span id="cb26-123"><a href="#cb26-123" aria-hidden="true" tabindex="-1"></a><span class="in">  left_join(acc_n |&gt; transmute(FU, `Passed (of 7)` = passed,</span></span>
 <span id="cb26-124"><a href="#cb26-124" aria-hidden="true" tabindex="-1"></a><span class="in">                                Accepted = ifelse(accepted, &quot;yes&quot;, &quot;no&quot;)), by = &quot;FU&quot;) |&gt;</span></span>
 <span id="cb26-125"><a href="#cb26-125" aria-hidden="true" tabindex="-1"></a><span class="in">  left_join(cfg_tab |&gt; transmute(FU, Configuration = cfg_label(stock)), by = &quot;FU&quot;) |&gt;</span></span>
-<span id="cb26-126"><a href="#cb26-126" aria-hidden="true" tabindex="-1"></a><span class="in">  relocate(Configuration, .after = FU) |&gt;</span></span>
+<span id="cb26-126"><a href="#cb26-126" aria-hidden="true" tabindex="-1"></a><span class="in">  relocate(Accepted, Configuration, .after = FU) |&gt;</span></span>
 <span id="cb26-127"><a href="#cb26-127" aria-hidden="true" tabindex="-1"></a><span class="in">  arrange(FU) |&gt;</span></span>
 <span id="cb26-128"><a href="#cb26-128" aria-hidden="true" tabindex="-1"></a><span class="in">  kbl(caption = &quot;Acceptance checklist by stock (✓ pass, ✗ fail, – not evaluated). Hindcast MASE is supplementary.&quot;) |&gt;</span></span>
 <span id="cb26-129"><a href="#cb26-129" aria-hidden="true" tabindex="-1"></a><span class="in">  kable_styling(bootstrap_options = c(&quot;striped&quot;, &quot;condensed&quot;), font_size = 11)</span></span>
