@@ -1,0 +1,37 @@
+---
+title: "SPiCT assessment of *Nephrops* in FU 14 (Irish Sea East)"
+subtitle: "Exploratory test of SPiCT on a UWTV-assessed stock (not the basis of ICES advice)"
+date: today
+bibliography: ../../knowledge/references.bib
+params:
+  stock: "nep.fu.14"
+  refit: false            # true: refit even if a valid cached fit exists
+  run_retro: false
+  run_hindcast: false
+  run_checkini: false
+  run_sensitivity: false
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    code-fold: true
+    code-tools: true
+execute:
+  message: false
+  warning: false
+---
+
+::: {.callout-note}
+## Stock-specific notes
+
+None recorded.
+
+Stock settings (discard survival, survey timing, catch start, B0/K prior overrides) are in
+`data/config/stocks.csv`. Generic settings are in `R/setup.R`. Cached fits are reused only
+when their input key matches; set a `run_*` parameter to `true` to force a rerun.
+:::
+
+{{< include ../_template/_spict_body.qmd >}}
+

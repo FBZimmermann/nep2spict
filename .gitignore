@@ -1,0 +1,10 @@
+.Rproj.user/
+.Rhistory
+.RData
+*_files/
+*.html
+/.quarto/
+data/spict/
+data/input/
+data/summary/
+data/*.log

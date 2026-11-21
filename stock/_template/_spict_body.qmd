@@ -1,0 +1,398 @@
+```{r setup}
+#| include: false
+source(here::here("R", "setup.R"))
+source(path_R("sag_data.R"))
+source(path_R("prepare_inputs.R"))
+source(path_R("spict_functions.R"))
+
+stock     <- params$stock
+out_dir   <- path_data("spict", stock)
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+knitr::opts_chunk$set(fig.width = 9, fig.height = 5.5, dpi = 110, dev = "png")
+
+input  <- build_stock_input(stock)          # from the cached SAG records
+meta   <- input$meta
+d      <- input$data
+advice      <- get_asd_advice(stock, settings$sag_year)
+advice_prev <- get_asd_advice(stock, settings$sag_year - 1)
+priors <- default_priors(input)
+inp    <- make_spict_inp(input, priors)
+key    <- inp_key(inp)
+```
+
+# Introduction
+
+This document fits the SPiCT surplus production model [@pedersen2017] to *Nephrops* in
+`r meta$area` (`r stock`, FU `r meta$fu`), an ICES Category 1 stock. ICES assesses it with the
+UWTV abundance and a harvest rate relative to a per-recruit FMSY proxy [@ices2026wgneph]. The aim
+is to test whether SPiCT, run with a generic configuration taken from the accepted FU32 SPiCT
+assessment, gives an acceptable assessment for this stock and how its results compare with the
+Category 1 assessment. This is an exploratory analysis. It is **not** the basis of ICES advice.
+
+Inputs are the `r settings$sag_year` SAG records (assessment key(s) `r meta$sag_keys`), retrieved
+`r format(input$sag_retrieved, "%Y-%m-%d")`. The ICES advice for `r settings$advice_year` comes
+from the ICES Advice and Scenarios Database.
+
+# Data
+
+## Catches
+
+The SPiCT catch is the dead removals: landings plus dead discards, with discard survival
+`r 100 * meta$discard_survival` % (`r input$cfg$survival_source`). The series runs
+`r meta$catch_start`–`r meta$catch_end`.
+`r if (meta$n_imputed_discards > 0) paste0("Discards were missing in ", meta$n_imputed_discards, " years before ", meta$discard_start, " and were imputed as landings × ", fmt(meta$discard_ref_ratio, 3), ", the discard/landings ratio of the first ", settings$discard_ref_n, " years with data. These years have ", settings$sdfacC_imputed, " times the catch uncertainty of the other years before normalisation.") else "No discards were imputed."`
+
+```{r fig-catch}
+#| fig-cap: "Catch components (t). Dead removals (landings + dead discards) are the SPiCT catch. Hatched bars: imputed discards."
+#| fig-height: 4
+d |>
+  filter(!is.na(catch)) |>
+  transmute(year, Landings = landings, `Dead discards` = dead_discards,
+            `Surviving discards` = discards_used - dead_discards, imputed = discards_imputed) |>
+  pivot_longer(c(Landings, `Dead discards`, `Surviving discards`)) |>
+  mutate(name = factor(name, c("Surviving discards", "Dead discards", "Landings")),
+         alpha = ifelse(imputed & name != "Landings", 0.45, 1)) |>
+  ggplot(aes(year, value, fill = name, alpha = alpha)) +
+  geom_col(width = 0.85) +
+  scale_alpha_identity() +
+  scale_fill_manual(values = c("Landings" = "#2C5F8A", "Dead discards" = "#C0504D",
+                               "Surviving discards" = "#E8B4B2"), name = NULL) +
+  labs(x = NULL, y = "Catch (t)") + report_theme + theme(legend.position = "top")
+```
+
+## UWTV abundance index
+
+The index is the UWTV abundance estimate, `r meta$n_index` survey years from `r meta$index_start`
+to `r meta$index_end`, entered at year + `r meta$index_timing`
+(`r input$cfg$timing_source`). The mean CV of the survey estimates is
+`r fmt(100 * meta$mean_index_cv, 1)` %.
+
+```{r fig-index}
+#| fig-cap: "UWTV abundance with confidence interval (as reported in SAG). Dashed: ICES MSY Btrigger."
+#| fig-height: 4
+g <- d |> filter(!is.na(index)) |>
+  ggplot(aes(year, index)) +
+  geom_ribbon(aes(ymin = index_lo, ymax = index_hi), alpha = 0.25) +
+  geom_line() + geom_point() +
+  labs(x = NULL, y = paste0("Abundance (", meta$stock_size_units, ")")) + report_theme
+if (!is.na(meta$MSYBtrigger)) g <- g + geom_hline(yintercept = meta$MSYBtrigger, linetype = 2, colour = "#C0504D")
+g
+```
+
+```{r fig-hr}
+#| fig-cap: "Category 1 harvest rate (dead removals in number / UWTV abundance). Dashed: FMSY proxy harvest rate."
+#| fig-height: 3.5
+d |> filter(!is.na(hr)) |>
+  ggplot(aes(year, hr)) + geom_line() + geom_point() +
+  geom_hline(yintercept = meta$FMSY_HR, linetype = 2, colour = "#C0504D") +
+  labs(x = NULL, y = "Harvest rate (%)") + report_theme
+```
+
+```{r tab-input}
+d |>
+  filter(!is.na(catch) | !is.na(index)) |>
+  transmute(Year = year, `Landings (t)` = round(landings), `Discards (t)` = round(discards_used),
+            Imputed = ifelse(discards_imputed, "yes", ""),
+            `Dead removals (t)` = round(catch), `UWTV abundance` = signif(index, 4),
+            `CV (%)` = round(100 * index_cv, 1), `HR (%)` = round(hr, 1),
+            stdevfacC = round(stdevfacC, 2), stdevfacI = round(stdevfacI, 2)) |>
+  kbl(caption = "SPiCT input data.") |>
+  kable_styling(bootstrap_options = c("striped", "condensed"), font_size = 11) |>
+  scroll_box(height = "350px")
+```
+
+# Model configuration
+
+The configuration follows the FU32 template (`knowledge/spict_conventions.md`). The shape is a
+Schaefer production curve with n = 2 fixed, and the `logalpha` and `logbeta` priors are off. The
+other priors are listed below. Index and catch uncertainty multipliers (`stdevfacI`,
+`stdevfacC`) average 1, and the Euler time step is 1/16 year. The catch in the assessment year
+(`r settings$sag_year`) is not observed. The `r settings$sag_year` UWTV index is used.
+
+```{r tab-priors}
+pr <- inp$priors
+tibble(
+  Parameter = c("r", "B0/K", "sdb (process)", "sdc (catch)", "sdi (index)", "n (shape)"),
+  `Prior median` = c(priors$r_median, priors$bkfrac_median, priors$sdb_median,
+                     priors$sdc_median, if (priors$use_sdi_prior) priors$sdi_median else NA, 2),
+  `SD (log)` = c(priors$r_sd, priors$bkfrac_sd, priors$sdb_sd, priors$sdc_sd,
+                 if (priors$use_sdi_prior) priors$sdi_sd else NA, NA),
+  Source = c("Nephrops meta-analysis (FU32 template)", "generic, weakly informative",
+             "FU32 template", "FU32 template", "mean UWTV CV of this stock", "fixed (Schaefer)")
+) |> kbl(digits = 3, caption = "Priors (lognormal).") |>
+  kable_styling(bootstrap_options = c("striped", "condensed"), full_width = FALSE)
+```
+
+```{r fig-spict-data}
+#| fig-cap: "SPiCT input: catch and scaled index."
+#| fig-height: 5
+safe_plot(function() plotspict.data(inp))
+```
+
+# Model fit
+
+```{r fit}
+#| results: hide
+fit <- cached(file.path(out_dir, "fit.rds"), key, params$refit, fit_spict_safe(inp))
+fit_ok <- is_ok_fit(fit)
+if (!fit_ok) message("Base fit failed or did not converge.")
+```
+
+```{r nonconv-callout}
+#| results: asis
+#| echo: false
+if (!fit_ok) cat("::: {.callout-warning}\n**The base model did not converge**",
+                 if (inherits(fit, "spict_error")) paste0(" (", fit$error, ")") else "",
+                 ". The downstream sections are skipped.\n:::\n")
+```
+
+```{r summary-fit, eval=fit_ok}
+summary(fit)
+```
+
+```{r fig-overview, eval=fit_ok}
+#| fig-cap: "SPiCT overview: absolute and relative biomass and fishing mortality, catch, and production curve."
+#| fig-height: 9
+safe_plot(function() plot(fit), mar = c(4, 4, 3, 2))
+```
+
+# Diagnostics
+
+## Observation residuals
+
+```{r fig-osa, eval=fit_ok}
+#| fig-cap: "One-step-ahead residual diagnostics for catch (C) and index (I). Green titles: p > 0.05."
+#| fig-height: 6.5
+safe_plot(function() plotspict.diagnostic(fit))
+```
+
+## Process residuals
+
+```{r fig-process, eval=fit_ok}
+#| fig-cap: "Process residual diagnostics (biomass B and fishing mortality F innovations)."
+#| fig-height: 6.5
+safe_plot(function() plotspict.diagnostic.process(fit))
+```
+
+## Priors and posteriors
+
+```{r fig-priors, eval=fit_ok}
+#| fig-cap: "Prior (dashed) and posterior (solid) densities."
+#| fig-height: 5
+safe_plot(function() plotspict.priors(fit), mar = c(4, 4, 3, 2))
+```
+
+```{r tab-priorpost, eval=fit_ok}
+prior_posterior(fit) |>
+  kbl(digits = 3, caption = "Prior vs posterior. sd_ratio near 1 means the posterior sits on the prior (data uninformative); |shift| > 2 means the data pull against the prior.") |>
+  kable_styling(bootstrap_options = c("striped", "condensed"), full_width = FALSE)
+```
+
+```{r tab-cor, eval=fit_ok}
+cm <- cov2cor(fit$cov.fixed)
+as.data.frame(round(cm, 2)) |>
+  kbl(caption = "Correlation of fixed-effect parameter estimates (|r| > 0.8 in bold).") |>
+  kable_styling(bootstrap_options = c("condensed"), font_size = 10) |>
+  (\(t) { for (j in seq_len(ncol(cm))) t <- column_spec(t, j + 1, bold = abs(cm[, j]) > 0.8 & abs(cm[, j]) < 1); t })()
+```
+
+## Retrospective analysis
+
+```{r retro, eval=fit_ok}
+#| results: hide
+retro_fit <- cached(file.path(out_dir, "retro.rds"), key, params$run_retro,
+                    retro(fit, nretroyear = settings$nretro))
+```
+
+```{r fig-retro, eval=fit_ok}
+#| fig-cap: "Retrospective analysis (5 peels) with Mohn's rho."
+#| fig-height: 6
+safe_plot(function() plotspict.retro(retro_fit, add.mohn = TRUE), mar = c(4, 4, 3, 2))
+```
+
+## Hindcast
+
+```{r hindcast, eval=fit_ok}
+#| results: hide
+hind_fit <- cached(file.path(out_dir, "hindcast.rds"), key, params$run_hindcast,
+                   tryCatch(hindcast(fit, npeels = settings$nhindcast), error = function(e) NULL))
+```
+
+```{r fig-hindcast, eval=fit_ok}
+#| fig-cap: "Hindcast of the index with MASE (below 1: better than a naive persistence forecast)."
+#| fig-height: 4.5
+if (!is.null(hind_fit)) safe_plot(function() plotspict.hindcast(hind_fit), mar = c(4, 4, 3, 2))
+```
+
+## Sensitivity to initial values
+
+```{r checkini, eval=fit_ok}
+#| results: hide
+ini_fit <- cached(file.path(out_dir, "checkini.rds"), key, params$run_checkini,
+                  tryCatch(list(check.ini = check.ini(fit, ntrials = settings$ncheckini,
+                                                      verbose = FALSE)$check.ini),
+                           error = function(e) NULL))
+```
+
+```{r tab-checkini, eval=fit_ok}
+if (!is.null(ini_fit)) {
+  rm  <- ini_fit$check.ini$resmat
+  rel <- ini_relative_deviation(rm)
+  cat("Trials:", length(rel), "| converged:", sum(!is.na(rel)),
+      "| max relative deviation from base estimates:", signif(100 * max(rel, na.rm = TRUE), 3), "%\n")
+  print(signif(rm, 4))
+}
+```
+
+# Acceptance checklist
+
+```{r checks, eval=fit_ok}
+checks <- acceptance_checks(fit, retro_fit = retro_fit, ini = ini_fit, hind = hind_fit)
+n_pass <- sum(checks$pass[checks$id <= 7], na.rm = TRUE)
+n_eval <- sum(!is.na(checks$pass[checks$id <= 7]))
+accepted <- n_eval == 7 && n_pass == 7
+checks |>
+  mutate(Verdict = case_when(is.na(pass) ~ "–", pass ~ "pass", TRUE ~ "FAIL"),
+         `Long-lived rho bar` = case_when(is.na(pass_long) ~ "", pass_long ~ "pass", TRUE ~ "fail")) |>
+  select(`#` = id, Check = check, Criterion = criterion, Value = value, Verdict, `Long-lived rho bar`) |>
+  kbl(caption = "SPiCT acceptance checklist (spict guidelines; ICES). Item 8 is supplementary.") |>
+  kable_styling(bootstrap_options = c("striped", "condensed")) |>
+  row_spec(which(checks$pass %in% FALSE), color = "#9C2B27", bold = TRUE)
+```
+
+```{r checks-fallback, include=FALSE}
+if (!exists("checks")) { checks <- NULL; accepted <- FALSE; n_pass <- NA; n_eval <- NA }
+```
+
+`r if (fit_ok) paste0("**Verdict:** the assessment passes ", n_pass, " of ", n_eval, " evaluated acceptance criteria and is ", if (accepted) "**acceptable** by the SPiCT checklist" else "**not acceptable** by the SPiCT checklist", ". Failed items: ", if (any(checks$pass[checks$id <= 7] %in% FALSE)) paste(checks$check[checks$id <= 7 & checks$pass %in% FALSE], collapse = "; ") else "none", ".") else ""`
+
+# Stock status and comparison with the Category 1 assessment
+
+```{r status, eval=fit_ok}
+ts <- spict_timeseries(fit) |>
+  left_join(d |> select(year, B_Btrigger_ices, HR_FMSY_ices, index), by = "year")
+st <- spict_status(fit)
+cor_B <- with(ts, suppressWarnings(cor(log(BBmsy), log(index), use = "complete.obs")))
+cor_F <- with(ts, suppressWarnings(cor(log(FFmsy), log(HR_FMSY_ices), use = "complete.obs")))
+```
+
+`r if (fit_ok) paste0("SPiCT estimates B/BMSY = ", fmt(st$BBmsy), " (95 % CI ", fmt(st$BBmsy_lo), "–", fmt(st$BBmsy_hi), ") at the time of the ", settings$sag_year, " survey and F/FMSY = ", fmt(st$FFmsy), " (", fmt(st$FFmsy_lo), "–", fmt(st$FFmsy_hi), ") in ", st$F_year, ". The Pearson correlation between log B/BMSY and log UWTV abundance over the survey years is ", fmt(cor_B), ", and between log F/FMSY and log HR/FMSY-proxy it is ", fmt(cor_F), ".") else ""`
+
+```{r fig-status, eval=fit_ok}
+#| fig-cap: "SPiCT B/BMSY and F/FMSY (line, 95 % CI) against the Category 1 ratios (points): UWTV abundance / MSY Btrigger and HR / FMSY proxy. Dashed: 1 (SPiCT BMSY, FMSY) and 0.5 (SPiCT MSY Btrigger convention). The reference points differ in kind (see knowledge/spict_conventions.md)."
+#| fig-height: 7
+pB <- ggplot(ts, aes(year)) +
+  geom_ribbon(aes(ymin = BBmsy_lo, ymax = BBmsy_hi), alpha = 0.2) +
+  geom_line(aes(y = BBmsy, colour = "SPiCT B/BMSY")) +
+  geom_point(aes(y = B_Btrigger_ices, colour = "UWTV / MSY Btrigger"), na.rm = TRUE) +
+  geom_hline(yintercept = c(0.5, 1), linetype = 2) +
+  scale_colour_manual(values = c("SPiCT B/BMSY" = "black", "UWTV / MSY Btrigger" = "#C0504D"), name = NULL) +
+  labs(x = NULL, y = "Relative stock size") + report_theme + theme(legend.position = "top")
+pF <- ggplot(ts, aes(year)) +
+  geom_ribbon(aes(ymin = FFmsy_lo, ymax = FFmsy_hi), alpha = 0.2) +
+  geom_line(aes(y = FFmsy, colour = "SPiCT F/FMSY")) +
+  geom_point(aes(y = HR_FMSY_ices, colour = "HR / FMSY proxy"), na.rm = TRUE) +
+  geom_hline(yintercept = 1, linetype = 2) +
+  scale_colour_manual(values = c("SPiCT F/FMSY" = "black", "HR / FMSY proxy" = "#C0504D"), name = NULL) +
+  labs(x = NULL, y = "Relative fishing pressure") + report_theme + theme(legend.position = "top")
+pB / pF
+```
+
+```{r fig-kobe, eval=fit_ok}
+#| fig-cap: "SPiCT phase plot (F/FMSY vs B/BMSY)."
+#| fig-height: 5
+safe_plot(function() plotspict.fb(fit))
+```
+
+# Sensitivity analysis
+
+Each run changes one element of the base configuration (`run_sensitivity()` in
+`R/spict_functions.R`). The "Biomass index" run converts UWTV abundance to biomass with the mean
+weight of the removals (`knowledge/spict_conventions.md`). Runs that change the data (index or
+catch) cannot be compared with the base run by likelihood.
+
+```{r sensitivity, eval=fit_ok}
+#| results: hide
+# Key includes the code of run_sensitivity(), so adding or changing a run invalidates the cache
+sens_key <- rlang::hash(list(key, deparse(run_sensitivity), deparse(sens_row)))
+sens <- cached(file.path(out_dir, "sensitivity.rds"), sens_key, params$run_sensitivity,
+               run_sensitivity(input, priors))
+```
+
+```{r fig-sens, eval=fit_ok}
+#| fig-cap: "Terminal B/BMSY and F/FMSY (95 % CI) across sensitivity runs. Open symbols: run did not converge or has non-finite variances."
+#| fig-height: 5.5
+sens |> filter(converged) |>
+  select(label, group, BBmsy_est = BBmsy, BBmsy_lo, BBmsy_hi, FFmsy_est = FFmsy, FFmsy_lo, FFmsy_hi) |>
+  pivot_longer(-c(label, group), names_to = c("q", ".value"), names_pattern = "(BBmsy|FFmsy)_(.*)") |>
+  mutate(q = recode(q, BBmsy = "B/BMSY", FFmsy = "F/FMSY"),
+         label = factor(label, rev(unique(sens$label)))) |>
+  ggplot(aes(est, label, colour = group)) +
+  geom_vline(xintercept = 1, linetype = 2) +
+  geom_errorbarh(aes(xmin = lo, xmax = hi), height = 0.2) + geom_point() +
+  facet_wrap(~q, scales = "free_x") + scale_x_log10() +
+  labs(x = "Estimate (log scale)", y = NULL, colour = NULL) + report_theme +
+  theme(legend.position = "bottom")
+```
+
+```{r tab-sens, eval=fit_ok}
+sens |>
+  mutate(across(where(is.numeric), ~signif(.x, 3))) |>
+  kbl(caption = "Sensitivity runs: terminal status, key parameters, number of OSA tests with p <= 0.05, and CI width of B/BMSY in orders of magnitude.") |>
+  kable_styling(bootstrap_options = c("striped", "condensed"), font_size = 10) |>
+  scroll_box(width = "100%")
+```
+
+# Short-term forecast and comparison with ICES advice
+
+The intermediate year (`r settings$sag_year`) catch is the `r meta$catch_end` dead removals
+(`r round(tail(na.omit(d$catch), 1))` t). The advice year is `r settings$advice_year`.
+
+```{r management, eval=fit_ok}
+#| results: hide
+man <- cached(file.path(out_dir, "management.rds"), key, params$refit,
+              run_management(fit, intermediate_catch = tail(na.omit(d$catch), 1)))
+mantab <- management_table(man)
+```
+
+```{r tab-management, eval=fit_ok}
+mantab |>
+  mutate(catch_total = dead_to_total_catch(catch_dead, input)) |>
+  relocate(catch_total, .after = catch_dead) |>
+  mutate(across(c(catch_dead, catch_total), round), across(where(is.double), ~signif(.x, 3))) |>
+  kbl(col.names = c("Scenario", "Dead removals (t)", "Total catch (t)", "F/FMSY", "B/BMSY",
+                    "P(B<BMSY)", "P(B<Blim)", "P(B<0.5BMSY)", "P(F>FMSY)", "P(F>Flim)"),
+      caption = paste0("SPiCT catch scenarios for ", settings$advice_year,
+                       ". Total catch adds surviving discards at the recent discard rate.")) |>
+  kable_styling(bootstrap_options = c("striped", "condensed"), font_size = 11)
+```
+
+```{r advice-compare, eval=fit_ok}
+summ <- make_stock_summary(input, fit, man, mantab, checks, sens = sens, retro_fit = retro_fit,
+                           advice = advice, advice_prev = advice_prev)
+adv <- summ$advice
+```
+
+`r if (fit_ok) paste0("The SPiCT ICES MSY rule (35th percentile) gives ", round(adv$spict_catch_dead), " t dead removals in ", settings$advice_year, ", equivalent to ", round(adv$spict_catch_total), " t total catch or ", round(adv$spict_landings), " t landings. ICES advised ", if (is.na(adv$ices_advice)) "– (not available)" else paste0(round(adv$ices_advice), " t (", tolower(adv$ices_advice_type), if (adv$ices_advice_components > 1) paste0(", sum of ", adv$ices_advice_components, " components") else "", ")"), " for ", settings$advice_year, " (", adv$ices_advice_doi, "). The ratio of the comparable SPiCT value to the ICES advice is ", fmt(adv$ratio_spict_ices), ".") else ""`
+
+```{r save, eval=fit_ok}
+dir.create(path_data("summary"), showWarnings = FALSE)
+saveRDS(summ, path_data("summary", paste0(stock, "_summary.rds")))
+```
+
+```{r save-failed, eval=!fit_ok}
+dir.create(path_data("summary"), showWarnings = FALSE)
+saveRDS(list(stock = stock, meta = meta, failed = TRUE,
+             error = if (inherits(fit, "spict_error")) fit$error else paste("convergence", fit$opt$convergence),
+             created = Sys.time()),
+        path_data("summary", paste0(stock, "_summary.rds")))
+```
+
+# Session information
+
+spict `r packageVersion("spict")`, icesSAG `r packageVersion("icesSAG")`, `r R.version.string`.
+
+# References {.unnumbered}
+
+::: {#refs}
+:::

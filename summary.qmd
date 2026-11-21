@@ -1,0 +1,429 @@
+---
+title: "SPiCT for *Nephrops* stocks with UWTV surveys"
+subtitle: "Comparative overview: acceptance, parameters, trends, and comparison with the ICES Category 1 assessments"
+date: today
+bibliography: knowledge/references.bib
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    code-fold: true
+    code-tools: true
+    fig-width: 10
+execute:
+  message: false
+  warning: false
+---
+
+```{r setup}
+#| include: false
+source(here::here("R", "setup.R"))
+source(path_R("spict_functions.R"))
+knitr::opts_chunk$set(dpi = 110, dev = "png")
+
+stocks <- read_stock_table()
+files  <- path_data("summary", paste0(stocks$stock, "_summary.rds"))
+avail  <- file.exists(files)
+S      <- lapply(files[avail], readRDS)
+names(S) <- stocks$stock[avail]
+failed <- names(S)[vapply(S, function(x) isTRUE(x$failed), logical(1))]
+ok     <- setdiff(names(S), failed)
+missing_stocks <- stocks$stock[!avail]
+
+lab <- function(stock) paste0("FU ", stocks$fu[match(stock, stocks$stock)])
+fu_levels <- lab(stocks$stock)
+```
+
+::: {.callout-important}
+This is an exploratory comparison. SPiCT was applied with one generic configuration to stocks that
+ICES assesses with the UWTV-based Category 1 method. The results are **not** an alternative basis
+for advice. Each stock would need a benchmark (stock-specific priors, index treatment, catch
+history) before a SPiCT assessment could be considered.
+:::
+
+# Scope
+
+The stocks are the `r nrow(stocks)` ICES Category 1 *Nephrops* stocks with a UWTV survey and a
+UWTV-based assessment, as listed in WGNEPH 2025 [@ices2026wgneph]. Inputs are the
+`r settings$sag_year` SAG records, so the last data point is the `r settings$sag_year` UWTV
+survey. The model configuration follows the accepted FU32 SPiCT assessment
+(`knowledge/spict_conventions.md`). Summaries are available for `r length(S)` stocks.
+`r if (length(failed)) paste0("The base model failed for: ", paste(failed, collapse = ", "), ". ") else ""``r if (length(missing_stocks)) paste0("Not yet run: ", paste(missing_stocks, collapse = ", "), ".") else ""`
+
+```{r tab-scope}
+bind_rows(lapply(S, \(x) x$meta)) |>
+  transmute(FU = fu, Area = area, Ecoregion = ecoregion,
+            Catch = paste0(catch_start, "–", catch_end),
+            UWTV = paste0(index_start, "–", index_end), `N surveys` = n_index,
+            `Mean CV (%)` = round(100 * mean_index_cv, 1),
+            `Discard survival (%)` = 100 * discard_survival,
+            `Imputed discard years` = n_imputed_discards,
+            `MSY Btrigger` = ifelse(is.na(MSYBtrigger), "none", "yes"),
+            `FMSY proxy HR (%)` = FMSY_HR) |>
+  kbl(caption = "Stocks, data coverage, and Category 1 reference points (SAG).") |>
+  kable_styling(bootstrap_options = c("striped", "condensed"), font_size = 11)
+```
+
+# Acceptance of the SPiCT assessments
+
+The checklist follows the SPiCT guidelines (`knowledge/acceptance_criteria.md`). The Mohn's rho
+verdict uses the shorter-lived bar [−0.22, 0.30] of Hurtado-Ferro et al. [-@hurtadoferro2015]. The
+longer-lived bar [−0.15, 0.20] is shown separately.
+
+```{r acc}
+acc <- bind_rows(lapply(ok, function(s) S[[s]]$checks |> mutate(stock = s))) |>
+  mutate(FU = factor(lab(stock), fu_levels))
+acc_wide <- acc |>
+  filter(id <= 8) |>
+  mutate(v = case_when(is.na(pass) ~ "–", pass ~ "✓", TRUE ~ "✗")) |>
+  select(FU, check, v) |>
+  pivot_wider(names_from = check, values_from = v)
+acc_n <- acc |> filter(id <= 7) |> group_by(FU) |>
+  summarise(passed = sum(pass, na.rm = TRUE), evaluated = sum(!is.na(pass)),
+            rho_long = any(id == 4 & pass_long %in% TRUE), .groups = "drop") |>
+  mutate(accepted = passed == 7 & evaluated == 7)
+n_acc <- sum(acc_n$accepted)
+```
+
+`r n_acc` of `r length(ok)` stocks pass all seven acceptance criteria.
+
+```{r tab-acc}
+acc_wide |>
+  left_join(acc_n |> transmute(FU, `Passed (of 7)` = passed,
+                                Accepted = ifelse(accepted, "yes", "no")), by = "FU") |>
+  arrange(FU) |>
+  kbl(caption = "Acceptance checklist by stock (✓ pass, ✗ fail, – not evaluated). Hindcast MASE is supplementary.") |>
+  kable_styling(bootstrap_options = c("striped", "condensed"), font_size = 11)
+```
+
+```{r fig-acc}
+#| fig-cap: "Which criteria fail, by stock."
+#| fig-height: 5
+acc |> filter(id <= 8) |>
+  mutate(check = factor(check, unique(acc$check[order(acc$id)])),
+         verdict = case_when(is.na(pass) ~ "not evaluated", pass ~ "pass", TRUE ~ "fail")) |>
+  ggplot(aes(check, FU, fill = verdict)) +
+  geom_tile(colour = "white") +
+  scale_fill_manual(values = c(pass = "#7FB77E", fail = "#C0504D", `not evaluated` = "grey80"), name = NULL) +
+  labs(x = NULL, y = NULL) + report_theme +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
+```{r tab-acc-values}
+acc |> filter(id %in% c(3, 4, 5, 6, 8)) |>
+  select(FU, check, value) |>
+  pivot_wider(names_from = check, values_from = value) |>
+  arrange(FU) |>
+  kbl(caption = "Values behind the main diagnostic criteria.") |>
+  kable_styling(bootstrap_options = c("striped", "condensed"), font_size = 10)
+```
+
+```{r tab-osa}
+bind_rows(lapply(ok, function(s) S[[s]]$residuals |> mutate(FU = lab(s)))) |>
+  filter(p <= 0.05) |>
+  mutate(series = recode(series, C = "catch", I1 = "index", B = "biomass", F = "fishing mortality"),
+         p = signif(p, 2)) |>
+  arrange(factor(FU, fu_levels)) |>
+  kbl(caption = "Residual tests with p <= 0.05. Observation (catch, index) residuals enter acceptance criterion 3; process residuals are reported for information.") |>
+  kable_styling(bootstrap_options = c("striped", "condensed"), full_width = FALSE, font_size = 11)
+```
+
+# Estimated parameters
+
+```{r pars}
+pars <- bind_rows(lapply(ok, function(s) S[[s]]$params |> mutate(stock = s))) |>
+  mutate(FU = factor(lab(stock), fu_levels))
+pp <- bind_rows(lapply(ok, function(s) S[[s]]$priors |> mutate(stock = s))) |>
+  mutate(FU = factor(lab(stock), fu_levels))
+```
+
+```{r tab-pars}
+pars |>
+  filter(parameter %in% c("r", "K", "MSY", "Fmsy", "sdb", "sdi", "sdc")) |>
+  mutate(txt = ifelse(parameter %in% c("K", "MSY"),
+                      sprintf("%s (%s–%s)", signif(est, 3), signif(lo, 2), signif(hi, 2)),
+                      sprintf("%.2f (%.2f–%.2f)", est, lo, hi))) |>
+  select(FU, parameter, txt) |>
+  pivot_wider(names_from = parameter, values_from = txt) |>
+  left_join(pars |> distinct(FU, bmsyk), by = "FU") |>
+  arrange(FU) |>
+  rename(`K (t)` = K, `MSY (t)` = MSY, `BMSY/K` = bmsyk) |>
+  mutate(`BMSY/K` = round(`BMSY/K`, 2)) |>
+  kbl(caption = "Parameter estimates with 95 % CI. Schaefer shape fixed (BMSY/K = 0.5).") |>
+  kable_styling(bootstrap_options = c("striped", "condensed"), font_size = 10)
+```
+
+```{r fig-r}
+#| fig-cap: "Posterior of r by stock (95 % CI) against the common prior (median and 95 % range shaded). Stocks whose posterior sits on the prior gain little information on productivity from their data."
+#| fig-height: 5
+r_prior <- exp(log(settings$r_median) - 0.5 * settings$r_sd^2 + c(-1.96, 0, 1.96) * settings$r_sd)
+pars |> filter(parameter == "r") |>
+  ggplot(aes(est, FU)) +
+  annotate("rect", xmin = r_prior[1], xmax = r_prior[3], ymin = -Inf, ymax = Inf, alpha = 0.15) +
+  geom_vline(xintercept = r_prior[2], linetype = 2) +
+  geom_errorbarh(aes(xmin = lo, xmax = hi), height = 0.2) + geom_point() +
+  labs(x = "r", y = NULL) + report_theme
+```
+
+```{r tab-info}
+pp |> filter(parameter %in% c("r", "bkfrac", "sdi")) |>
+  select(FU, parameter, sd_ratio, shift_in_prior_sd) |>
+  pivot_wider(names_from = parameter, values_from = c(sd_ratio, shift_in_prior_sd)) |>
+  arrange(FU) |>
+  mutate(across(where(is.numeric), ~round(.x, 2))) |>
+  kbl(caption = "Information in the data: posterior/prior SD ratio (near 1: posterior on prior) and shift of the posterior median in prior SDs.") |>
+  kable_styling(bootstrap_options = c("striped", "condensed"), font_size = 11)
+```
+
+# Stock trends
+
+```{r ts}
+ts <- bind_rows(lapply(ok, function(s) S[[s]]$timeseries |> mutate(stock = s))) |>
+  mutate(FU = factor(lab(stock), fu_levels))
+```
+
+```{r fig-bbmsy}
+#| fig-cap: "SPiCT B/BMSY (line, 95 % CI) and UWTV abundance / MSY Btrigger (points) by stock. Dashed: B/BMSY = 1 and 0.5."
+#| fig-height: 10
+ts |> filter(year <= settings$sag_year) |>
+  ggplot(aes(year)) +
+  geom_ribbon(aes(ymin = BBmsy_lo, ymax = BBmsy_hi), alpha = 0.2) +
+  geom_line(aes(y = BBmsy)) +
+  geom_point(aes(y = B_Btrigger_ices), colour = "#C0504D", size = 0.9, na.rm = TRUE) +
+  geom_hline(yintercept = c(0.5, 1), linetype = 2, linewidth = 0.3) +
+  facet_wrap(~FU, scales = "free_y", ncol = 4) +
+  labs(x = NULL, y = "B/BMSY (line); UWTV / MSY Btrigger (points)") + report_theme
+```
+
+```{r fig-ffmsy}
+#| fig-cap: "SPiCT F/FMSY (line, 95 % CI) and Category 1 HR / FMSY proxy (points). Dashed: 1."
+#| fig-height: 10
+ts |> filter(year < settings$sag_year) |>
+  ggplot(aes(year)) +
+  geom_ribbon(aes(ymin = FFmsy_lo, ymax = FFmsy_hi), alpha = 0.2) +
+  geom_line(aes(y = FFmsy)) +
+  geom_point(aes(y = HR_FMSY_ices), colour = "#C0504D", size = 0.9, na.rm = TRUE) +
+  geom_hline(yintercept = 1, linetype = 2, linewidth = 0.3) +
+  facet_wrap(~FU, scales = "free_y", ncol = 4) +
+  labs(x = NULL, y = "F/FMSY (line); HR / FMSY proxy (points)") + report_theme
+```
+
+# Comparison with the ICES Category 1 assessments
+
+The two assessments use different kinds of reference point. MSY Btrigger in Category 1 is mostly
+the lowest observed abundance (Bloss), and the FMSY proxy is a per-recruit harvest rate. SPiCT
+estimates production-model BMSY and FMSY. The comparison is therefore made on **trends**
+(correlations over the survey years) and on **status classifications**, not on the size of the
+ratios.
+
+```{r compare}
+cmp <- bind_rows(lapply(ok, function(s) {
+  x <- S[[s]]; t <- x$timeseries; st <- x$status
+  last_hr <- t |> filter(!is.na(HR_FMSY_ices)) |> slice_tail(n = 1)
+  last_b  <- t |> filter(!is.na(index)) |> slice_tail(n = 1)
+  tibble(
+    stock = s, FU = lab(s),
+    cor_B = suppressWarnings(cor(log(t$BBmsy), log(t$index), use = "complete.obs")),
+    cor_F = suppressWarnings(cor(log(t$FFmsy), log(t$HR_FMSY_ices), use = "complete.obs")),
+    spict_BBmsy = st$BBmsy, spict_FFmsy = st$FFmsy,
+    ices_B = last_b$B_Btrigger_ices, ices_F = last_hr$HR_FMSY_ices, ices_F_year = last_hr$year,
+    spict_B_status = ifelse(st$BBmsy >= settings$btrigger_bmsy, "above", "below"),
+    ices_B_status  = ifelse(is.na(last_b$B_Btrigger_ices), NA, ifelse(last_b$B_Btrigger_ices >= 1, "above", "below")),
+    spict_F_status = ifelse(st$FFmsy <= 1, "below", "above"),
+    ices_F_status  = ifelse(is.na(last_hr$HR_FMSY_ices), NA, ifelse(last_hr$HR_FMSY_ices <= 1, "below", "above"))
+  )
+})) |> mutate(FU = factor(FU, fu_levels))
+agree_B <- with(cmp, sum(spict_B_status == ices_B_status, na.rm = TRUE)); n_B <- sum(!is.na(cmp$ices_B_status))
+agree_F <- with(cmp, sum(spict_F_status == ices_F_status, na.rm = TRUE)); n_F <- sum(!is.na(cmp$ices_F_status))
+```
+
+Stock-size status (SPiCT B ≥ 0.5 BMSY vs UWTV abundance ≥ MSY Btrigger) agrees in `r agree_B` of
+`r n_B` stocks with an MSY Btrigger. Fishing-pressure status (F ≤ FMSY vs HR ≤ FMSY proxy) agrees
+in `r agree_F` of `r n_F` stocks. The median correlation between log B/BMSY and log UWTV abundance
+is `r fmt(median(cmp$cor_B, na.rm = TRUE))`. The median correlation between log F/FMSY and log
+HR/FMSY proxy is `r fmt(median(cmp$cor_F, na.rm = TRUE))`.
+
+```{r tab-compare}
+cmp |> arrange(FU) |>
+  transmute(FU,
+            `SPiCT B/BMSY` = round(spict_BBmsy, 2), `UWTV/MSY Btrigger` = round(ices_B, 2),
+            `B status agrees` = ifelse(is.na(ices_B_status), "–", ifelse(spict_B_status == ices_B_status, "yes", "NO")),
+            `SPiCT F/FMSY` = round(spict_FFmsy, 2), `HR/FMSY proxy` = round(ices_F, 2),
+            `F status agrees` = ifelse(is.na(ices_F_status), "–", ifelse(spict_F_status == ices_F_status, "yes", "NO")),
+            `r(B)` = round(cor_B, 2), `r(F)` = round(cor_F, 2)) |>
+  kbl(caption = paste0("Terminal status. SPiCT B at the ", settings$sag_year, " survey and F in ", settings$sag_year - 1, "; Category 1 abundance from the ", settings$sag_year, " survey and HR in the last year available. r(B), r(F): correlation of log trends over survey years.")) |>
+  kable_styling(bootstrap_options = c("striped", "condensed"), font_size = 11)
+```
+
+```{r fig-compare}
+#| fig-cap: "Terminal status from SPiCT against the Category 1 ratios. Lines: status thresholds (SPiCT 0.5 BMSY and FMSY; Category 1 MSY Btrigger and FMSY proxy). Off-diagonal quadrants are disagreements."
+#| fig-height: 4.5
+p1 <- cmp |> filter(!is.na(ices_B)) |>
+  ggplot(aes(ices_B, spict_BBmsy, label = FU)) +
+  geom_hline(yintercept = 0.5, linetype = 2) + geom_vline(xintercept = 1, linetype = 2) +
+  geom_point() + geom_text(size = 3, vjust = -0.7) +
+  scale_x_log10() + scale_y_log10() +
+  labs(x = "UWTV abundance / MSY Btrigger", y = "SPiCT B/BMSY") + report_theme
+p2 <- cmp |> filter(!is.na(ices_F)) |>
+  ggplot(aes(ices_F, spict_FFmsy, label = FU)) +
+  geom_hline(yintercept = 1, linetype = 2) + geom_vline(xintercept = 1, linetype = 2) +
+  geom_point() + geom_text(size = 3, vjust = -0.7) +
+  scale_x_log10() + scale_y_log10() +
+  labs(x = "HR / FMSY proxy", y = "SPiCT F/FMSY") + report_theme
+p1 + p2
+```
+
+## Catch advice
+
+ICES Category 1 advice is total catch (landings plus all discards, including the surviving ones).
+SPiCT's catch is dead removals, so the SPiCT advice (ICES MSY rule, 35th percentile) is converted
+to total catch with the recent discard rate and discard survival.
+
+```{r advice}
+adv <- bind_rows(lapply(ok, function(s) S[[s]]$advice |> mutate(stock = s, FU = lab(s)))) |>
+  mutate(FU = factor(FU, fu_levels))
+```
+
+```{r tab-advice}
+adv |> arrange(FU) |>
+  transmute(FU, `SPiCT dead removals (t)` = round(spict_catch_dead),
+            `SPiCT comparable (t)` = round(spict_comparable),
+            `ICES advice (t)` = round(ices_advice),
+            `Advice type` = ices_advice_type,
+            `SPiCT / ICES` = round(ratio_spict_ices, 2),
+            `Previous ICES advice (t)` = round(ices_advice_prev),
+            DOI = ices_advice_doi) |>
+  kbl(caption = paste0("Catch advice for ", settings$advice_year, ": SPiCT (ICES MSY rule, 35th percentile), converted to the advice type (total catch, or landings), vs the published ICES advice. FU 13: sum of the Clyde and Jura advice.")) |>
+  kable_styling(bootstrap_options = c("striped", "condensed"), font_size = 10)
+```
+
+```{r fig-advice}
+#| fig-cap: "Ratio of SPiCT advice (total-catch equivalent) to ICES advice. Colour: whether the SPiCT assessment passes all acceptance criteria."
+#| fig-height: 4.5
+adv |> left_join(acc_n |> select(FU, accepted), by = "FU") |>
+  ggplot(aes(ratio_spict_ices, FU, colour = accepted)) +
+  geom_vline(xintercept = 1, linetype = 2) + geom_point(size = 2.5) +
+  scale_x_log10() + scale_colour_manual(values = c(`TRUE` = "#2C5F8A", `FALSE` = "#C0504D"),
+                                        labels = c(`TRUE` = "accepted", `FALSE` = "not accepted"), name = NULL) +
+  labs(x = "SPiCT / ICES advice (log scale)", y = NULL) + report_theme
+```
+
+# Robustness to configuration choices
+
+```{r sens}
+sens <- bind_rows(lapply(ok, function(s) if (!is.null(S[[s]]$sensitivity)) S[[s]]$sensitivity |> mutate(stock = s))) |>
+  mutate(FU = factor(lab(stock), fu_levels))
+sens_sum <- sens |> group_by(FU) |>
+  summarise(runs = n(), converged = sum(converged),
+            B_min = min(BBmsy, na.rm = TRUE), B_max = max(BBmsy, na.rm = TRUE),
+            F_min = min(FFmsy, na.rm = TRUE), F_max = max(FFmsy, na.rm = TRUE),
+            B_status_flips = n_distinct(BBmsy[converged] >= settings$btrigger_bmsy) > 1,
+            F_status_flips = n_distinct(FFmsy[converged] <= 1) > 1, .groups = "drop")
+```
+
+Across the sensitivity runs, the stock-size classification (relative to 0.5 BMSY) changes in
+`r sum(sens_sum$B_status_flips)` of `r nrow(sens_sum)` stocks. The fishing-pressure
+classification (relative to FMSY) changes in `r sum(sens_sum$F_status_flips)`.
+
+```{r fig-sens}
+#| fig-cap: "Terminal B/BMSY and F/FMSY across sensitivity runs (points) and base run (cross)."
+#| fig-height: 6
+sens |> filter(converged) |>
+  select(FU, label, BBmsy, FFmsy) |>
+  pivot_longer(c(BBmsy, FFmsy)) |>
+  mutate(name = recode(name, BBmsy = "B/BMSY", FFmsy = "F/FMSY")) |>
+  ggplot(aes(value, FU)) +
+  geom_vline(data = tibble(name = c("B/BMSY", "B/BMSY", "F/FMSY"), x = c(0.5, 1, 1)), aes(xintercept = x), linetype = 2) +
+  geom_point(alpha = 0.5, colour = "grey30") +
+  geom_point(data = \(x) filter(x, label == "Base"), shape = 4, size = 3, colour = "#C0504D") +
+  facet_wrap(~name, scales = "free_x") + scale_x_log10() +
+  labs(x = "Estimate (log scale)", y = NULL) + report_theme
+```
+
+## Index observation error
+
+UWTV confidence intervals capture sampling variance only. Bias and variance from burrow
+identification, edge effects, the one-burrow-one-animal assumption and changes in survey design
+are not included, so they are likely too narrow. Three runs widen the index error relative to the
+base (prior median = mean UWTV CV): the prior median at 2 and 3 times the CV, and no prior.
+
+```{r sdi}
+cv_tab <- tibble(stock = ok, cv = vapply(ok, \(s) S[[s]]$meta$mean_index_cv, numeric(1))) |>
+  mutate(FU = factor(lab(stock), fu_levels))
+sdi_runs <- c("Base", "sdi prior x2", "sdi prior x3", "sdi prior off")
+sdi_tab <- sens |> filter(label %in% sdi_runs) |>
+  left_join(cv_tab |> select(stock, cv), by = "stock") |>
+  group_by(FU) |>
+  mutate(base_B = BBmsy[label == "Base"][1], base_F = FFmsy[label == "Base"][1]) |>
+  ungroup() |>
+  mutate(sdi_cv = sdi / cv, dB = BBmsy / base_B - 1, dF = FFmsy / base_F - 1)
+x3 <- sdi_tab |> filter(label == "sdi prior x3", converged)
+base_sdi <- sdi_tab |> filter(label == "Base", converged)
+```
+
+In the base runs the estimated sdi is a median of `r fmt(median(base_sdi$sdi_cv), 1)` times the
+UWTV CV (range `r fmt(min(base_sdi$sdi_cv), 1)`–`r fmt(max(base_sdi$sdi_cv), 1)`). With the prior
+at 3 × CV, `r nrow(x3)` of `r sum(sdi_tab$label == "sdi prior x3")` runs converged. Their terminal
+B/BMSY moves by a median of `r fmt(100 * median(abs(x3$dB)), 0)` % from the base run (maximum
+`r fmt(100 * max(abs(x3$dB)), 0)` %), and F/FMSY by a median of `r fmt(100 * median(abs(x3$dF)), 0)` %
+(maximum `r fmt(100 * max(abs(x3$dF)), 0)` %).
+
+```{r tab-sdi}
+sdi_tab |>
+  transmute(FU, run = label, converged, `UWTV CV` = round(cv, 3), sdi = round(sdi, 3),
+            `sdi / CV` = round(sdi_cv, 1), `B/BMSY` = round(BBmsy, 2),
+            `change B` = sprintf("%+.0f %%", 100 * dB), `F/FMSY` = round(FFmsy, 2),
+            `change F` = sprintf("%+.0f %%", 100 * dF), `CI B (log10)` = round(ci_B, 2),
+            `OSA fails` = osa_fail) |>
+  mutate(run = factor(run, sdi_runs)) |> arrange(FU, run) |>
+  kbl(caption = "Base and index-error runs: estimated sdi relative to the UWTV CV and change in terminal status.") |>
+  kable_styling(bootstrap_options = c("striped", "condensed"), font_size = 10) |>
+  scroll_box(height = "450px")
+```
+
+```{r fig-sdi}
+#| fig-cap: "Terminal B/BMSY (95 % CI) in the base run and with wider index observation error."
+#| fig-height: 6
+sdi_tab |> filter(converged) |>
+  mutate(label = factor(label, rev(sdi_runs))) |>
+  ggplot(aes(BBmsy, FU, colour = label)) +
+  geom_vline(xintercept = c(0.5, 1), linetype = 2) +
+  geom_pointrange(aes(xmin = BBmsy_lo, xmax = BBmsy_hi), position = position_dodge(width = 0.6), size = 0.2) +
+  scale_x_log10() + labs(x = "B/BMSY (log scale)", y = NULL, colour = NULL) + report_theme
+```
+
+## All runs
+
+```{r tab-sens}
+sens_sum |> arrange(FU) |>
+  mutate(across(c(B_min, B_max, F_min, F_max), ~round(.x, 2)),
+         across(c(B_status_flips, F_status_flips), ~ifelse(.x, "YES", "no"))) |>
+  kbl(caption = "Range of terminal estimates across sensitivity runs and whether the status classification changes.") |>
+  kable_styling(bootstrap_options = c("striped", "condensed"), font_size = 11)
+```
+
+# Caveats
+
+- The UWTV index counts animals, while SPiCT models biomass. The "Biomass index" sensitivity run
+  tests the effect of mean-weight changes, using the mean weight of the removals.
+- Priors are generic: r is a *Nephrops* meta-analysis value from the FU32 template, and B0/K is
+  weakly informative. Where the posterior/prior SD ratio is near 1, the estimate reflects the
+  prior.
+- UWTV CVs measure sampling precision only and are likely too narrow. `sdi` is estimated with a
+  prior centred on the mean CV, with SD 0.5 (wider than in FU32), and tested with 2 × and 3 × the
+  CV and with no prior (section "Index observation error").
+- Discards before the first year of discard data are imputed.
+- Short UWTV series (FU 3-4, 16, 20-21, 23-24) have little contrast.
+
+# Reproducibility
+
+Inputs: SAG `r settings$sag_year` records cached in `data/sag/`, ICES advice in `data/asd/`.
+spict `r unique(vapply(S[ok], \(x) x$spict_version, ""))`. Stock documents in `stock/<stock>/`.
+Rerun with `Rscript R/render_all.R`.
+
+# References {.unnumbered}
+
+::: {#refs}
+:::

@@ -1,0 +1,17 @@
+stock,fu,area,ecoregion,sag_keys,component_rule,discard_survival,survival_source,index_timing,timing_source,catch_start,bkfrac_median,bkfrac_sd,notes
+nep.fu.3-4,3-4,Skagerrak and Kattegat,Greater North Sea,25935,single,0.25,WGNEPH 2025 ch. 2 (Gueguen & Charuau),0.50,assumed mid-year (to verify),NA,NA,NA,UWTV index only from 2017; high-survival exemption since 2017
+nep.fu.6,6,Farn Deeps,Greater North Sea,25986,single,0.15,WGNEPH 2025 ch. 4 (benchmark 2013),0.42,late May-June (WGNEPH 2025 ch. 4),NA,NA,NA,SAG rows to 2029 are empty forecast years
+nep.fu.7,7,Fladen Ground,Greater North Sea,25941,single,0.25,WGNEPH 2025 ch. 5,0.45,assumed June (to verify),NA,NA,NA,Index in billions
+nep.fu.8,8,Firth of Forth,Greater North Sea,25940,single,0.25,WGNEPH 2025 ch. 6,0.54,July (WGNEPH 2025 ch. 6),NA,NA,NA,
+nep.fu.9,9,Moray Firth,Greater North Sea,25923,single,0.25,WGNEPH 2025 ch. 7,0.45,June in recent years; August earlier (WGNEPH 2025 ch. 7),NA,NA,NA,Survey month changed from August to June
+nep.fu.11,11,North Minch,West of Scotland,25917,single,0.25,WGNEPH 2025 ch. 9,0.45,June (WGNEPH 2025 ch. 9),NA,NA,NA,
+nep.fu.12,12,South Minch,West of Scotland,25978,single,0.25,WGNEPH 2025 ch. 10,0.45,June (WGNEPH 2025 ch. 10),NA,NA,NA,
+nep.fu.13,13,Firth of Clyde and Sound of Jura,West of Scotland,25984;25985,sum_index,0.25,WGNEPH 2025 ch. 11,0.45,June (WGNEPH 2025 ch. 11),NA,NA,NA,Two SAG components (Clyde; Jura) share FU-level landings and HR; index = sum of component abundances
+nep.fu.14,14,Irish Sea East,Celtic Seas,25998,single,0.10,WGNEPH 2025 ch. 12 (IBPNeph 2015),0.62,assumed August (to verify),NA,NA,NA,
+nep.fu.15,15,Irish Sea West,Celtic Seas,25989,single,0.10,WGNEPH 2025 ch. 13 (WKNEPH),0.62,August (WGNEPH 2025 ch. 13),NA,NA,NA,
+nep.fu.16,16,Porcupine Bank,Celtic Seas,25968,single,0.00,no discards reported (SAG discards empty),0.55,assumed summer (to verify),NA,NA,NA,No discard series in SAG; dead discards set to zero
+nep.fu.17,17,Aran grounds,Celtic Seas,25945,single,0.25,WGNEPH 2025 ch. 15,0.55,assumed summer (to verify),NA,NA,NA,
+nep.fu.19,19,Irish Sea Celtic Sea and SW Ireland,Celtic Seas,26009,single,0.25,WGNEPH 2025 ch. 16,0.55,assumed summer (to verify),NA,NA,NA,
+nep.fu.2021,20-21,Celtic Sea (Labadie Jones Cockburn),Celtic Seas,25962,single,0.25,WGNEPH 2025 ch. 17,0.55,assumed summer (to verify),NA,NA,NA,UWTV index only from 2013
+nep.fu.22,22,Smalls,Celtic Seas,25974,single,0.25,WGNEPH 2025 ch. 18,0.55,assumed summer (to verify),NA,NA,NA,
+nep.fu.2324,23-24,Bay of Biscay north and central,Bay of Biscay and Iberian Coast,25982,single,0.50,WGNEPH 2025 ch. 19 (revised 50%),0.37,April-May since 2016 (WGNEPH 2025 ch. 19),NA,NA,NA,UWTV index only from 2016
